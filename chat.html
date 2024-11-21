@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Assistant</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <!-- Link para o arquivo CSS -->
+    <link rel="stylesheet" href="style.css">
+    
+    <style>
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <button id="newChatBtn" class="new-chat-btn">
+                <span class="material-icons">add</span>
+                Nova Conversa
+            </button>
+            <div id="chatSessions" class="chat-sessions">
+                <!-- Sessões de chat serão adicionadas aqui -->
+            </div>
+        </div>
+        <div class="content">
+            <div id="chatContainer" class="chat-container">
+                <!-- Mensagens serão adicionadas aqui -->
+            </div>
+            <div class="chat-input-container">
+                <div class="input-actions">
+                    <input type="file" id="fileInput" class="file-input" accept="*/*">
+                    <input type="file" id="imageInput" class="file-input" accept="image/*">
+                    <button id="fileUploadBtn" class="input-action-btn">
+                        <span class="material-icons">attach_file</span>
+                    </button>
+                    <button id="imageUploadBtn" class="input-action-btn">
+                        <span class="material-icons">image</span>
+                    </button>
+                </div>
+                <div class="chat-input">
+                    <input id="messageInput" type="text" placeholder="Digite sua mensagem...">
+                </div>
+                <button id="sendButton" class="send-button">
+                    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAfhJREFUSEu11E3ITVEUBuDnkwllYCDyU6QkMRElE/8/yYDCTIlMDAyQiVIiE5+BZEYyMSEyMPAvE4kyIGTgL0SSgWJAsZfWV8fp3nvu5bu7Tnufc/Z63/Xuvd41oM9joM/4eiEYiav4iTU5N+bXC8EWnE7EWJ9pRKdrBZHIM8xI0OeYiV9NJN0qWIeLeJmA0xDfLg0XwX3Mw45UfQIPMH84CJbiBj5hcgK+xTjEv1udSLo5oqicFdiHwwkW60NZVav+h2A2HuErJuUceGPwEaMwB4/bkTQpOFeCN+AI9tZABgvhbsSeTf9CECX5NA0VZx93UB0T8RojMB2vWpF0UnAS28rFxrw9gxdl7d/J91PYWtvzF087gnbZRTWFuZYnSqgMA/4ozg5vvK+raEdwFLtwHhszaAHu5nphZX0B68vFR8yebgjGliN516JCrlUyv4LVCRYGDCN+z0r7UiVppWB/cesBXM/6j/3V7Ifi5+JhvoTZFiNiD3YiGI1waahYhpuYUJrcWSypyY8ENuMDViJUfcaUVPNne13BzgJ+rNT8t9JnLmfmEdBpvMG90pvW5rEGxvGhgDpBdMupNbRwbCiJJ7KOEVUUfSie8bX9L9IXLRWE5aNEb2eDi7N90qBgVoUs7iEMF/fTkqABq/ffTb2od8RaRN8JfgP9eV4ZCU8VqQAAAABJRU5ErkJggg=="/>        </div>
+    </div>
+
+    <!-- Script para o arquivo JavaScript -->
+    <script type="module">
+import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+const API_KEY = 'AIzaSyDdkdcylDh9vQ2DinxNOR2lrU7el0nUmZA';
+const genAI = new GoogleGenerativeAI(API_KEY);
+
+class ChatManager {
+    constructor() {
+        this.sessions = [];
+        this.currentSessionId = null;
+        this.messageInput = document.getElementById('messageInput');
+        this.sendButton = document.getElementById('sendButton');
+        this.chatContainer = document.getElementById('chatContainer');
+        this.chatSessionsContainer = document.getElementById('chatSessions');
+        this.newChatBtn = document.getElementById('newChatBtn');
+
+      // Novos elementos
+      this.fileUploadBtn = document.getElementById('fileUploadBtn');
+        this.imageUploadBtn = document.getElementById('imageUploadBtn');
+        this.fileInput = document.getElementById('fileInput');
+        this.imageInput = document.getElementById('imageInput');
+
+        this.initEventListeners();
+        this.loadSessions();
+        
+        // Verifica se já existem sessões antes de criar uma nova
+        if (this.sessions.length === 0) {
+            this.createFirstSession();
+        } else {
+            // Carrega a primeira sessão existente
+            this.currentSessionId = this.sessions[0].id;
+            this.renderSessions();
+            this.loadChatMessages();
+        }
+    }
+
+    addMessage(content, sender) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', `${sender}-message`);
+        messageElement.textContent = content;
+
+        // Adiciona timestamp
+        const timestamp = document.createElement('div');
+        timestamp.classList.add('message-timestamp');
+        timestamp.textContent = new Date().toLocaleTimeString();
+        messageElement.appendChild(timestamp);
+
+        // Adiciona botão de copiar para mensagens de IA
+        if (sender === 'ai') {
+            const copyButton = document.createElement('button');
+            copyButton.classList.add('copy-message-btn');
+            copyButton.innerHTML = '<span class="material-icons">content_copy</span>';
+            copyButton.addEventListener('click', () => {
+                navigator.clipboard.writeText(content).then(() => {
+                    copyButton.innerHTML = '<span class="material-icons">check</span>';
+                    setTimeout(() => {
+                        copyButton.innerHTML = '<span class="material-icons">content_copy</span>';
+                    }, 2000);
+                });
+            });
+            messageElement.appendChild(copyButton);
+        }
+
+        this.chatContainer.appendChild(messageElement);
+        this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+
+        // Salva mensagem na sessão atual
+        const currentSession = this.sessions.find(session => session.id === this.currentSessionId);
+        currentSession.messages.push({ content, sender });
+        this.saveSessions();
+    }
+
+
+    initEventListeners() {
+        // Eventos anteriores...
+
+        // Novos eventos para upload
+        this.fileUploadBtn.addEventListener('click', () => this.fileInput.click());
+        this.imageUploadBtn.addEventListener('click', () => this.imageInput.click());
+        
+        this.fileInput.addEventListener('change', (e) => this.handleFileUpload(e, 'file'));
+        this.imageInput.addEventListener('change', (e) => this.handleFileUpload(e, 'image'));
+    }
+
+    handleFileUpload(event, type) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Lógica para upload de arquivo
+        const fileMessage = `${type === 'file' ? 'Arquivo' : 'Imagem'} enviado: ${file.name}`;
+        this.addMessage(fileMessage, 'user');
+
+        // Limpar input após upload
+        event.target.value = '';
+    }
+
+    createFirstSession() {
+        const newSession = {
+            id: Date.now(),
+            title: 'Primeira Sessão',
+            messages: []
+        };
+        this.sessions.push(newSession);
+        this.currentSessionId = newSession.id;
+        this.saveSessions();
+        this.renderSessions();
+    }
+
+    initEventListeners() {
+        this.sendButton.addEventListener('click', () => this.sendMessage());
+        this.messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendMessage();
+        });
+        this.newChatBtn.addEventListener('click', () => this.createNewSession());
+    }
+
+    loadSessions() {
+        const savedSessions = JSON.parse(localStorage.getItem('chatSessions') || '[]');
+        this.sessions = savedSessions;
+        this.renderSessions();
+    }
+
+    renderSessions() {
+        this.chatSessionsContainer.innerHTML = '';
+        this.sessions.forEach(session => {
+            const sessionElement = document.createElement('div');
+            sessionElement.classList.add('chat-session');
+            if (session.id === this.currentSessionId) {
+                sessionElement.classList.add('active');
+            }
+            sessionElement.innerHTML = `
+                <span class="material-icons">chat_bubble</span>
+                ${session.title}
+            `;
+            sessionElement.addEventListener('click', () => this.switchSession (session.id));
+            this.chatSessionsContainer.appendChild(sessionElement);
+        });
+    }
+
+    createNewSession() {
+        const newSession = {
+            id: Date.now(),
+            title: `Sessão ${this.sessions.length + 1}`,
+            messages: []
+        };
+        this.sessions.push(newSession);
+        this.currentSessionId = newSession.id;
+        this.saveSessions();
+        this.renderSessions();
+        this.chatContainer.innerHTML = ''; // Clear chat container
+    }
+
+    switchSession(sessionId) {
+        this.currentSessionId = sessionId;
+        this.saveSessions();
+        this.renderSessions();
+        this.loadChatMessages();
+    }
+
+    loadChatMessages() {
+        const currentSession = this.sessions.find(session => session.id === this.currentSessionId);
+        this.chatContainer.innerHTML = '';
+        currentSession.messages.forEach(msg => this.addMessage(msg.content, msg.sender));
+    }
+
+    saveSessions() {
+        localStorage.setItem('chatSessions', JSON.stringify(this.sessions));
+    }
+
+    addMessage(content, sender) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', `${sender}-message`);
+        messageElement.textContent = content;
+        const timestamp = document.createElement('div');
+        timestamp.classList.add('message-timestamp');
+        timestamp.textContent = new Date().toLocaleTimeString();
+        messageElement.appendChild(timestamp);
+        this.chatContainer.appendChild(messageElement);
+        this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+
+        // Save message to current session
+        const currentSession = this.sessions.find(session => session.id === this.currentSessionId);
+        currentSession.messages.push({ content, sender });
+        this.saveSessions();
+    }
+
+    async sendMessage() {
+        const message = this.messageInput.value.trim();
+        if (!message) return;
+
+        this.addMessage(message, 'user');
+        this.messageInput.value = '';
+        this.showLoading();
+
+        try {
+            const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(message);
+            const response = await result.response;
+            const text = await response.text();
+            this.removeLoading();
+            this.addMessage(text, 'ai');
+        } catch (error) {
+            this.removeLoading();
+            this.addMessage('Erro ao processar sua mensagem.', 'ai');
+            console.error(error);
+        }
+    }
+
+    showLoading() {
+        const loadingElement = document.createElement('div');
+        loadingElement.classList.add('loading');
+        loadingElement.textContent = 'Digitando...';
+        this.chatContainer.appendChild(loadingElement);
+        this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+    }
+
+    removeLoading() {
+        const loadingElement = this.chatContainer.querySelector('.loading');
+        if (loadingElement) {
+            loadingElement.remove();
+        }
+    }
+}
+
+const chatManager = new ChatManager();
+
+
+    </script>
+</body>
+</html>
